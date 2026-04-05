@@ -1,21 +1,22 @@
 package com.chargeflow.model;
 
-/**
- * ChargingStation — Represents an EV charging station.
- * Upgraded: Now supports latitude/longitude for real API-sourced stations.
- */
 public class ChargingStation {
 
     private final String name;
-    private final double locationKm;      // Distance from route start in km
+    private final String city;
+    private final String state;
+    private final String country;
+    private final double locationKm;
     private final String chargerType;
-    private final double pricePerUnit;    // Price per kWh in ₹
+    private final double pricePerUnit;
     private final double latitude;
     private final double longitude;
 
-    // Original constructor (backward compatible — for hardcoded/fallback stations)
     public ChargingStation(String name, double locationKm, String chargerType, double pricePerUnit) {
         this.name = name;
+        this.city = "Unknown";
+        this.state = "";
+        this.country = "";
         this.locationKm = locationKm;
         this.chargerType = chargerType;
         this.pricePerUnit = pricePerUnit;
@@ -23,10 +24,12 @@ public class ChargingStation {
         this.longitude = 0;
     }
 
-    // New constructor with coordinates (for API-sourced stations)
-    public ChargingStation(String name, double locationKm, String chargerType,
+    public ChargingStation(String name, String city, String state, String country, double locationKm, String chargerType,
                            double pricePerUnit, double latitude, double longitude) {
         this.name = name;
+        this.city = city;
+        this.state = state;
+        this.country = country;
         this.locationKm = locationKm;
         this.chargerType = chargerType;
         this.pricePerUnit = pricePerUnit;
@@ -36,6 +39,18 @@ public class ChargingStation {
 
     public String getName() {
         return name;
+    }
+
+    public String getCity() {
+        return city;
+    }
+
+    public String getState() {
+        return state;
+    }
+
+    public String getCountry() {
+        return country;
     }
 
     public double getLocationKm() {
