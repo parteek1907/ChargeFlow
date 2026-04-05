@@ -2,12 +2,12 @@ package com.chargeflow.model;
 
 public class EVVehicle extends Vehicle {
 
-    private final double batteryCapacityKWh;      
-    private final double rangeKm;                  
-    private final double energyConsumptionPerKm;   
+    private final double batteryCapacityKWh;
+    private final double rangeKm;
+    private final double energyConsumptionPerKm;
 
     public EVVehicle(String name, double batteryCapacityKWh, double rangeKm, double energyConsumptionPerKm) {
-        super(name, "EV");  
+        super(name, "EV");
         this.batteryCapacityKWh = batteryCapacityKWh;
         this.rangeKm = rangeKm;
         this.energyConsumptionPerKm = energyConsumptionPerKm;
@@ -27,7 +27,7 @@ public class EVVehicle extends Vehicle {
 
     @Override
     public double getEfficiency() {
-        return rangeKm / batteryCapacityKWh;  
+        return rangeKm / batteryCapacityKWh;
     }
 
     @Override
