@@ -2,12 +2,12 @@ package com.chargeflow.model;
 
 public class ICEVehicle extends Vehicle {
 
-    private final String fuelType;            
-    private final double mileageKmPerLitre;   
-    private final double tankCapacityLitres;  
+    private final String fuelType;
+    private final double mileageKmPerLitre;
+    private final double tankCapacityLitres;
 
     public ICEVehicle(String name, String fuelType, double mileageKmPerLitre, double tankCapacityLitres) {
-        super(name, "ICE");  
+        super(name, "ICE");
         this.fuelType = fuelType;
         this.mileageKmPerLitre = mileageKmPerLitre;
         this.tankCapacityLitres = tankCapacityLitres;
@@ -27,7 +27,7 @@ public class ICEVehicle extends Vehicle {
 
     @Override
     public double getEfficiency() {
-        return mileageKmPerLitre;  
+        return mileageKmPerLitre;
     }
 
     @Override
