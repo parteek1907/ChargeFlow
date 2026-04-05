@@ -7,10 +7,6 @@ import com.chargeflow.utils.ApiConfig;
 import com.chargeflow.utils.DisplayUtils;
 import java.util.Scanner;
 
-/**
- * ChargeFlowApp — Interactive entry point.
- * Upgraded: Removed hardcoded route menu. Any city pair works now.
- */
 public class ChargeFlowApp {
 
     public static void main(String[] args) {
@@ -21,7 +17,6 @@ public class ChargeFlowApp {
 
         DisplayUtils.printBanner();
 
-        // Show API status
         if (ApiConfig.isConfigured()) {
             System.out.println("  [OK] API keys configured - unlimited routes enabled!");
         } else {
@@ -32,7 +27,6 @@ public class ChargeFlowApp {
         }
         System.out.println();
 
-        // Create vehicles
         EVVehicle ev = (EVVehicle) VehicleFactory.createVehicle("EV");
         ICEVehicle ice = (ICEVehicle) VehicleFactory.createVehicle("ICE");
 
