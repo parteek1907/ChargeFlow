@@ -12,24 +12,19 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
 
-/**
- * ChargingStationService — Fetches real charging station data using OpenChargeMap API.
- * 
- * Flow:
- *   1. Sample waypoints along the route (every ~50 km)
- *   2. For each waypoint, query OpenChargeMap for nearby stations
- *   3. Filter duplicates (same station found from multiple waypoints)
- *   4. Assign locationKm based on cumulative distance
- *   5. Sort by distance from route start
- * 
- * Falls back to generating dummy stations if API fails.
- */
 public class ChargingStationService {
 
     private final HttpClient httpClient;
-
-    // Default charging price when OCM doesn't provide pricing (₹/kWh)
     private static final double DEFAULT_PRICE_PER_KWH = 14.0;
+    private static final int SEARCH_RADIUS_KM = 40;
+    private static final int MAX_RESULTS_PER_QUERY = 10;
+    private static final int COORDINATE_STEP = 10;
+    private static final int MAX_STATIONS_OUTPUT = 15;
+
+    private static final Set<String> INVALID_NAMES = new HashSet<>(Arrays.asList(
+        "public", "private", "unknown", "null", "n/a", "na", "none", "test",
+        "charging station", "ev station", "station"
+    ));
 
     public ChargingStationService() {
         this.httpClient = HttpClient.newBuilder()
@@ -37,10 +32,6 @@ public class ChargingStationService {
             .build();
     }
 
-    /**
-     * Finds charging stations along a route.
-     * Uses API if configured and route has coordinates, otherwise generates fallback data.
-     */
     public List<ChargingStation> findStationsAlongRoute(Route route) {
         if (!ApiConfig.isConfigured() || !route.hasCoordinates()) {
             System.out.println("  [INFO] Using estimated charging station data.");
@@ -48,7 +39,7 @@ public class ChargingStationService {
         }
 
         try {
-            System.out.println("  [STATION] Searching for real charging stations along route...");
+            System.out.println("  [STATION] Searching for charging stations along route...");
             List<ChargingStation> stations = fetchStationsFromAPI(route);
 
             if (stations.isEmpty()) {
@@ -66,75 +57,108 @@ public class ChargingStationService {
         }
     }
 
-    /**
-     * Queries OpenChargeMap API at sampled waypoints along the route.
-     */
     private List<ChargingStation> fetchStationsFromAPI(Route route) throws Exception {
         List<double[]> coordinates = route.getRouteCoordinates();
-        double totalDistanceKm = route.getDistanceKm();
+        double totalRouteDistance = route.getDistanceKm();
         int totalCoords = coordinates.size();
 
         if (totalCoords == 0) return new ArrayList<>();
 
-        // Ensure we sample roughly every 20-30 km, but avoid busting API limits
-        // The user specifically wanted a step iteration. We will calculate an index step.
-        // E.g. skip `stepSize` coordinate points to match the ~20km distance.
-        int stepSize = Math.max(1, (int) (totalCoords * 25.0 / totalDistanceKm));
+        double[] sourceCoord = coordinates.get(0);
+        double sourceLat = sourceCoord[1];
+        double sourceLon = sourceCoord[0];
 
-        // Track seen stations by name to avoid duplicates
-        Set<String> seenStations = new HashSet<>();
+        Set<String> uniqueIds = new HashSet<>();
         List<ChargingStation> allStations = new ArrayList<>();
 
-        int queriesMade = 0;
-        int maxQueries = 20; // Ensure we don't spam the free tier API
+        int maxQueries = 30;
+        int step = Math.max(COORDINATE_STEP, totalCoords / maxQueries);
 
-        for (int i = 0; i < totalCoords && queriesMade < maxQueries; i += stepSize) {
+        int queriesMade = 0;
+
+        System.out.println("  [INFO] Route has " + totalCoords + " coordinate points. Sampling every " + step + " points (max " + maxQueries + " queries)...");
+
+        for (int i = 0; i < totalCoords && queriesMade < maxQueries; i += step) {
             double[] waypoint = coordinates.get(i);
             double lat = waypoint[1];
             double lon = waypoint[0];
 
-            // Estimate km position of this waypoint
-            double waypointKm = (double) i / totalCoords * totalDistanceKm;
-
-            List<ChargingStation> nearby = queryOpenChargeMap(lat, lon, waypointKm);
+            List<ChargingStation> nearby = queryOpenChargeMap(lat, lon);
             queriesMade++;
 
             for (ChargingStation station : nearby) {
-                // Deduplicate by name
-                String normalizedName = station.getName().toLowerCase().trim();
-                if (!seenStations.contains(normalizedName)) {
-                    seenStations.add(normalizedName);
-                    allStations.add(station);
-                }
+                if (!isValidStation(station)) continue;
+
+                String stationId = station.getName().toLowerCase().trim()
+                    + "_" + String.format("%.3f", station.getLatitude())
+                    + "_" + String.format("%.3f", station.getLongitude());
+
+                if (uniqueIds.contains(stationId)) continue;
+                uniqueIds.add(stationId);
+
+                double distFromSource = haversineKm(
+                    sourceLat, sourceLon,
+                    station.getLatitude(), station.getLongitude()
+                );
+
+                if (distFromSource < 5.0) continue;
+                if (distFromSource > totalRouteDistance + 50) continue;
+
+                ChargingStation stationWithDist = new ChargingStation(
+                    station.getName(),
+                    station.getCity(),
+                    station.getState(),
+                    station.getCountry(),
+                    distFromSource,
+                    station.getChargerType(),
+                    station.getPricePerUnit(),
+                    station.getLatitude(),
+                    station.getLongitude()
+                );
+                allStations.add(stationWithDist);
             }
 
-            // Small delay between API calls to be respectful
-            if (queriesMade < maxQueries && i + stepSize < totalCoords) {
-                Thread.sleep(200);
+            if (queriesMade < maxQueries && i + step < totalCoords) {
+                Thread.sleep(150);
             }
         }
 
-        // Sort by distance from start
+        System.out.println("  [INFO] Queried " + queriesMade + " sample points, found " + allStations.size() + " unique valid stations.");
+
         allStations.sort(Comparator.comparingDouble(ChargingStation::getLocationKm));
+
+        if (allStations.size() > MAX_STATIONS_OUTPUT) {
+            allStations = new ArrayList<>(allStations.subList(0, MAX_STATIONS_OUTPUT));
+        }
+
         return allStations;
     }
 
-    /**
-     * Queries OpenChargeMap for stations near a specific coordinate.
-     * 
-     * API: GET /v3/poi/?latitude=LAT&longitude=LON&distance=5&distanceunit=km&maxresults=5
-     */
-    private List<ChargingStation> queryOpenChargeMap(double lat, double lon, double waypointKm)
-            throws Exception {
+    private boolean isValidStation(ChargingStation station) {
+        if (station == null) return false;
 
+        double lat = station.getLatitude();
+        double lon = station.getLongitude();
+        if (lat == 0 || lon == 0) return false;
+        if (Double.isNaN(lat) || Double.isNaN(lon)) return false;
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return false;
+
+        String name = station.getName();
+        if (name == null || name.trim().length() < 3) return false;
+        if (INVALID_NAMES.contains(name.toLowerCase().trim())) return false;
+
+        return true;
+    }
+
+    private List<ChargingStation> queryOpenChargeMap(double lat, double lon) throws Exception {
         List<ChargingStation> stations = new ArrayList<>();
 
         String url = String.format(
             "%s?output=json&latitude=%f&longitude=%f&distance=%d&distanceunit=km&maxresults=%d&key=%s",
             ApiConfig.OCM_POI_URL,
             lat, lon,
-            ApiConfig.STATION_SEARCH_RADIUS_KM,
-            ApiConfig.MAX_STATIONS_PER_QUERY,
+            SEARCH_RADIUS_KM,
+            MAX_RESULTS_PER_QUERY,
             ApiConfig.OCM_API_KEY
         );
 
@@ -148,51 +172,64 @@ public class ChargingStationService {
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            return stations; // Return empty — don't crash
+            return stations;
         }
 
         String body = response.body();
 
-        // The response is a JSON array of POI objects
         if (!body.startsWith("[")) return stations;
 
         List<String> poiList = JsonParser.splitArray(body);
 
         for (String poi : poiList) {
             try {
-                ChargingStation station = parseStation(poi, waypointKm);
+                ChargingStation station = parseStation(poi);
                 if (station != null) {
                     stations.add(station);
                 }
             } catch (Exception e) {
-                // Skip malformed station data
             }
         }
 
         return stations;
     }
 
-    /**
-     * Parses a single POI JSON object from OpenChargeMap into a ChargingStation.
-     */
-    private ChargingStation parseStation(String poiJson, double waypointKm) {
-        // Extract station name from AddressInfo
+    private ChargingStation parseStation(String poiJson) {
         String addressInfo = JsonParser.getObject(poiJson, "AddressInfo");
-        String title = JsonParser.getString(addressInfo, "Title");
+        if (addressInfo.isEmpty()) return null;
 
-        if (title.isEmpty()) {
-            title = "Charging Station";
+        String title = JsonParser.getString(addressInfo, "Title");
+        if (title.isEmpty() || title.trim().length() < 3) return null;
+
+        String nameLower = title.toLowerCase().trim();
+        if (INVALID_NAMES.contains(nameLower)) return null;
+
+        String city = JsonParser.getString(addressInfo, "Town");
+        if (city == null || city.isEmpty() || city.equalsIgnoreCase("null")) {
+            city = "Unknown";
         }
 
-        // Extract coordinates
+        String state = JsonParser.getString(addressInfo, "StateOrProvince");
+        if (state == null || state.equalsIgnoreCase("null")) {
+            state = "";
+        }
+
+        String countryInfo = JsonParser.getObject(addressInfo, "Country");
+        String country = JsonParser.getString(countryInfo, "Title");
+        if (country == null || country.equalsIgnoreCase("null")) {
+            country = "";
+        }
+
         double stationLat = JsonParser.getDouble(addressInfo, "Latitude");
         double stationLon = JsonParser.getDouble(addressInfo, "Longitude");
 
-        // Determine charger type from Connections
+        if (stationLat == 0 || stationLon == 0) return null;
+        if (Double.isNaN(stationLat) || Double.isNaN(stationLon)) return null;
+        if (stationLat < -90 || stationLat > 90 || stationLon < -180 || stationLon > 180) return null;
+
         String chargerType = "DC Fast Charger";
         String connections = JsonParser.getArray(poiJson, "Connections");
         if (!connections.isEmpty()) {
-            // Try to find power level
             double powerKw = JsonParser.getDouble(connections, "PowerKW");
             if (powerKw > 0) {
                 if (powerKw >= 50) chargerType = "Fast DC " + (int) powerKw + "kW";
@@ -201,29 +238,36 @@ public class ChargingStationService {
             }
         }
 
-        // Use default price since OCM doesn't always provide pricing
-        double price = DEFAULT_PRICE_PER_KWH;
-
         return new ChargingStation(
-            title,
-            waypointKm,
+            title.trim(),
+            city,
+            state,
+            country,
+            0,
             chargerType,
-            price,
+            DEFAULT_PRICE_PER_KWH,
             stationLat,
             stationLon
         );
     }
 
-    /**
-     * Generates fallback charging stations when API is unavailable.
-     * Places stations every ~120 km along the route.
-     */
+    private static double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+        double R = 6371.0;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                 * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
     public List<ChargingStation> generateFallbackStations(double totalDistanceKm) {
         List<ChargingStation> stations = new ArrayList<>();
 
         if (totalDistanceKm <= 0) return stations;
 
-        double intervalKm = 120; // Station every ~120 km
+        double intervalKm = 120;
         double positionKm = intervalKm;
         int stationNumber = 1;
 
