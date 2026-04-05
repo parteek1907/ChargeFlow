@@ -7,21 +7,19 @@ import java.util.*;
 public class BatterySimulator {
 
     private static final double CHARGE_TARGET_PERCENT = 0.80;
-
     private static final double SAFETY_BUFFER_KM = 30.0;
 
     public SimulationResult simulate(EVVehicle ev, double totalDistanceKm, List<ChargingStation> availableStations) {
 
-        double batteryKWh = ev.getBatteryCapacityKWh();            
-        double remainingRangeKm = ev.getRangeKm();                 
-        double consumptionPerKm = ev.getEnergyConsumptionPerKm();  
-        double currentPositionKm = 0;                               
-        double totalEnergyConsumed = 0;                             
+        double batteryKWh = ev.getBatteryCapacityKWh();
+        double remainingRangeKm = ev.getRangeKm();
+        double consumptionPerKm = ev.getEnergyConsumptionPerKm();
+        double currentPositionKm = 0;
+        double totalEnergyConsumed = 0;
 
         List<ChargingStation> stopsUsed = new ArrayList<>();
 
         if (remainingRangeKm >= totalDistanceKm + SAFETY_BUFFER_KM) {
-
             totalEnergyConsumed = totalDistanceKm * consumptionPerKm;
             return new SimulationResult(stopsUsed, 0, totalEnergyConsumed, totalDistanceKm);
         }
@@ -33,7 +31,6 @@ public class BatterySimulator {
             if (distanceToStation <= 0) continue;
 
             if (remainingRangeKm - SAFETY_BUFFER_KM < distanceToStation) {
-
                 continue;
             }
 
@@ -46,24 +43,20 @@ public class BatterySimulator {
             double nextWaypointKm;
 
             if (i + 1 < availableStations.size()) {
-
                 nextWaypointKm = availableStations.get(i + 1).getLocationKm();
             } else {
-
                 nextWaypointKm = totalDistanceKm;
             }
 
             double distanceToNextWaypoint = nextWaypointKm - currentPositionKm;
 
             if (remainingRangeKm - SAFETY_BUFFER_KM < distanceToNextWaypoint) {
-
                 stopsUsed.add(station);
 
                 double chargeTargetKWh = ev.getBatteryCapacityKWh() * CHARGE_TARGET_PERCENT;
                 batteryKWh = chargeTargetKWh;
                 remainingRangeKm = batteryKWh / consumptionPerKm;
             }
-
         }
 
         double finalLegDistance = totalDistanceKm - currentPositionKm;
@@ -88,7 +81,7 @@ public class BatterySimulator {
         private final double totalDistanceKm;
 
         public SimulationResult(List<ChargingStation> stationsUsed, int totalStops,
-                                double totalEnergyConsumedKWh, double totalDistanceKm) {
+                                 double totalEnergyConsumedKWh, double totalDistanceKm) {
             this.stationsUsed = stationsUsed;
             this.totalStops = totalStops;
             this.totalEnergyConsumedKWh = totalEnergyConsumedKWh;
