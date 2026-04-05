@@ -3,7 +3,7 @@ package com.chargeflow.model;
 public abstract class Vehicle {
 
     private final String name;
-    private final String type;  
+    private final String type;
 
     protected Vehicle(String name, String type) {
         this.name = name;
