@@ -22,12 +22,7 @@ public class DisplayUtils {
         if (allStations != null && !allStations.isEmpty()) {
             int count = 1;
             for (ChargingStation station : allStations) {
-                String location;
-                if (station.getState() != null && !station.getState().isEmpty()) {
-                    location = station.getCity() + ", " + station.getState();
-                } else {
-                    location = station.getCity();
-                }
+                String location = formatLocation(station.getCity(), station.getState(), station.getCountry());
 
                 System.out.printf("  %d. %s -- %s -- %.0f km%n", count, station.getName(), location, station.getLocationKm());
                 count++;
@@ -104,6 +99,40 @@ public class DisplayUtils {
         bar.append("]");
 
         return bar.toString();
+    }
+
+    private static String formatLocation(String city, String state, String country) {
+        String safeCity = sanitizeLocationPart(city);
+        String safeState = sanitizeLocationPart(state);
+        String safeCountry = sanitizeLocationPart(country);
+
+        StringBuilder sb = new StringBuilder();
+        if (!safeCity.isEmpty()) {
+            sb.append(safeCity);
+        }
+        if (!safeState.isEmpty()) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(safeState);
+        }
+        if (!safeCountry.isEmpty()) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(safeCountry);
+        }
+
+        return sb.length() > 0 ? sb.toString() : "Along route (estimated)";
+    }
+
+    private static String sanitizeLocationPart(String value) {
+        if (value == null) return "";
+        String cleaned = value.trim();
+        if (cleaned.isEmpty()) return "";
+
+        String normalized = cleaned.toLowerCase();
+        if (normalized.equals("unknown") || normalized.equals("null") || normalized.equals("n/a") || normalized.equals("na")) {
+            return "";
+        }
+
+        return cleaned;
     }
 }
 

@@ -51,7 +51,14 @@ public class TripAnalyzer {
         );
 
         int motivationScore = motivationScoreCalculator.calculateScore(
-            evCost, iceCost, evEmissions, iceEmissions
+            evCost,
+            iceCost,
+            evEmissions,
+            iceEmissions,
+            distance,
+            batteryResult.getTotalStops(),
+            stations.size(),
+            ev.getRangeKm()
         );
 
         return new TripSummary.Builder()
